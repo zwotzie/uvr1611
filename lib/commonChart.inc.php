@@ -44,14 +44,22 @@ if(isset($_GET["grouping"])) {
 // connect to database
 $database = Database::getInstance();
 
-
+if (isset(Config::getInstance()->api->url)){
+    $ch = curl_init(Config::getInstance()->api->url."/api.php/databasewrapper/lastDataset");
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "GET");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $lastDatabaseValue = curl_exec($ch);
+    curl_close($ch);  // Seems like good practice
+}else{
+    $lastDatabaseValue = $database->lastDataset();
+}
 
 // check if required date is today and last update is older than 10 minutes
 // -> so we need to fetch new values
-if($date == date("Y-m-d") && ($database->lastDataset() + Config::getInstance()->app->chartcache) < time()) {
+if($date == date("Y-m-d") && ($lastDatabaseValue + Config::getInstance()->app->chartcache) < time()) {
 	$uvr = Uvr1611::getInstance();
 	$data = Array();
-	$lastDatabaseValue = $database->lastDataset();
+        
 	try {
 		$count = $uvr->startRead();
 		for($i=0; $i < $count; $i++) {
@@ -75,6 +83,26 @@ if($date == date("Y-m-d") && ($database->lastDataset() + Config::getInstance()->
 		throw $e;
 	}
 	// insert all data into database
-	$database->insertData($data);
-	$database->updateTables();
+        if (isset(Config::getInstance()->api->url)){
+            $str_data = json_encode($data);
+            $ch = curl_init(Config::getInstance()->api->url."/api.php/databasewrapper/insertData");
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");  
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array(                                                                          
+                'Content-Type: application/json',                                                                                
+                'Content-Length: ' . strlen($str_data))
+            );  
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $str_data);
+            curl_exec($ch);
+            curl_close($ch);  // Seems like good practice
+
+            $ch = curl_init(Config::getInstance()->api->url."/api.php/databasewrapper/updateTables");
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "GET");
+            curl_exec($ch);
+            curl_close($ch);  // Seems like good practice
+        }else{
+
+            $database->insertData($data);
+            $database->updateTables();
+        }
 }
